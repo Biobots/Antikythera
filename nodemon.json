@@ -1,0 +1,8 @@
+{
+	"verbose": false,
+	"debug": true,
+	"exec": "yarn compile",
+	"watch": ["./lib/", "./router/", "./"],
+	"ignore": ["./dist/"],
+	"ext": "ts, yml, yaml, json"
+}
