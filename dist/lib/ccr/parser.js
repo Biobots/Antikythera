@@ -25,62 +25,30 @@ const Proxy = __importStar(require("./proxy"));
 const Net = __importStar(require("./network"));
 const rule_1 = require("./rule");
 const utils_1 = require("./utils");
+const Type = __importStar(require("./types"));
+const Either_1 = require("fp-ts/lib/Either");
 function parseProxies(proxies) {
     if (!utils_1.check(proxies))
         return [];
-    const rst = proxies
-        .map((item) => {
-        let p;
-        switch (item.type) {
-            case 'vmess':
-                p = new Proxy.Vmess(item);
-                break;
-            case 'ss':
-                p = new Proxy.Shadowsocks(item);
-                break;
-            case 'socks5':
-                p = new Proxy.Socks5(item);
-                break;
-            case 'http':
-                p = new Proxy.Http(item);
-                break;
-            case 'trojan':
-                p = new Proxy.Trojan(item);
-                break;
-            default:
-                p = new Proxy.BaseProxy(item);
-                break;
-        }
-        return p;
+    const rst = [];
+    proxies
+        .map(raw => Type.tProxy.decode(raw))
+        .forEach(item => {
+        if (Either_1.isRight(item))
+            rst.push(item.right);
     });
     return rst;
 }
 exports.parseProxies = parseProxies;
 function parseProxyGroups(proxyGroups) {
-    const rst = proxyGroups
-        .map((item) => {
-        let p;
-        switch (item.type) {
-            case 'select':
-                p = new Proxy.SelectProxyGroup(item);
-                break;
-            case 'urltest':
-                p = new Proxy.UrlTestProxyGroup(item);
-                break;
-            case 'loadbalance':
-                p = new Proxy.LoadBalanceProxyGroup(item);
-                break;
-            case 'relay':
-                p = new Proxy.RelayProxyGroup(item);
-                break;
-            case 'fallback':
-                p = new Proxy.FallbackProxyGroup(item);
-                break;
-            default:
-                p = new Proxy.SelectProxyGroup(item);
-                break;
-        }
-        return p;
+    if (!utils_1.check(proxyGroups))
+        return [];
+    const rst = [];
+    proxyGroups
+        .map(raw => Type.tProxyGroup.decode(raw))
+        .forEach(item => {
+        if (Either_1.isRight(item))
+            rst.push(new Proxy.ProxyGroup(item.right));
     });
     return rst;
 }
@@ -88,25 +56,30 @@ exports.parseProxyGroups = parseProxyGroups;
 async function buildProxies(usr) {
     const rst = await Net.getUrls(usr.config.sub);
     usr.proxies = rst.map(item => item.data)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map(doc => yaml.safeLoad(doc))
         .map(obj => obj.proxies)
         .map(raw => parseProxies(raw))
         .reduce((all, cur) => all.concat(cur));
-    usr.proxies = usr.proxies.concat(parseProxies(usr.config.proxy));
+    if (typeof (usr.config.proxy) != 'undefined')
+        usr.proxies = usr.proxies.concat(parseProxies(usr.config.proxy));
 }
 exports.buildProxies = buildProxies;
 async function buildRuleGroups(usr) {
     usr.rules = await Promise.all(usr.config.rule.map(async (r) => {
         let payload = [];
-        if (utils_1.check(r.url)) {
+        if (typeof (r.url) != 'undefined' && r.url != null) {
             const rst = await Net.getUrls(r.url);
             payload = rst.map(item => item.data)
-                .map(doc => yaml.safeLoad(doc))
+                .map(doc => {
+                const payload = Type.tRulePayload.decode(yaml.safeLoad(doc));
+                return Either_1.isRight(payload) ? payload.right : { payload: [] };
+            })
                 .map(obj => obj.payload)
                 .map(raw => raw.map((s) => new rule_1.Rule(s)))
                 .reduce((all, cur) => all.concat(cur));
         }
-        if (utils_1.check(r.extra)) {
+        if (typeof (r.extra) != 'undefined' && r.extra != null) {
             payload = payload.concat(r.extra.map((record) => new rule_1.Rule(record)));
         }
         return new rule_1.RuleGroup(r.name, r.prior, payload);

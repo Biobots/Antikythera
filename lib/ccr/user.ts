@@ -4,15 +4,17 @@ import path = require('path')
 import * as Proxy from './proxy'
 import * as Parser from './parser'
 import * as Rule from './rule'
+import * as Type from './types'
+import { isRight } from 'fp-ts/lib/Either'
 
 export class User {
 
 	header=''
-	config:any
-	proxies:Proxy.BaseProxy[]=[]
+	config:Type.Config
+	proxies:Type.Proxy[]=[]
 	rules:Rule.RuleGroup[]=[]
 
-	groups:Proxy.BaseProxyGroup[]=[]
+	groups:Proxy.ProxyGroup[]=[]
 
 	doc:Record<string, string[]> = {
 		proxies:[],
@@ -22,7 +24,12 @@ export class User {
 
 	constructor(id:string) {
 		try {
-			this.config = yaml.safeLoad(fs.readFileSync(path.join(<string>process.env.CCR_DIR, id+'.yml'), 'utf-8'))
+			const c = Type.tConfig.decode(yaml.safeLoad(fs.readFileSync(path.join(<string>process.env.CCR_DIR, id+'.yml'), 'utf-8')))
+			if (isRight(c)) this.config = c.right
+			else {
+				console.log(c.left)
+				process.exit(1)
+			}
 			this.header = fs.readFileSync(path.join(<string>process.env.CCR_DIR, this.config.header), 'utf-8')
 			
 		} catch (error) {
@@ -50,7 +57,7 @@ export class User {
 
 	generateProxies():void {
 		this.proxies.forEach(item => {
-			this.doc.proxies.push(item.raw)
+			this.doc.proxies.push(JSON.parse(JSON.stringify(item)))
 		})
 	}
 
@@ -63,7 +70,7 @@ export class User {
 
 	generateGroups():void {
 		this.groups.forEach(item => {
-			this.doc.proxyGroups.push(item.getRaw())
+			this.doc.proxyGroups.push(JSON.parse(JSON.stringify(item.getRaw())))
 		})
 	}
 }

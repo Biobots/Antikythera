@@ -24,6 +24,8 @@ const yaml = require("js-yaml");
 const fs = require("fs");
 const path = require("path");
 const Parser = __importStar(require("./parser"));
+const Type = __importStar(require("./types"));
+const Either_1 = require("fp-ts/lib/Either");
 class User {
     constructor(id) {
         this.header = '';
@@ -36,7 +38,13 @@ class User {
             rules: []
         };
         try {
-            this.config = yaml.safeLoad(fs.readFileSync(path.join(process.env.CCR_DIR, id + '.yml'), 'utf-8'));
+            const c = Type.tConfig.decode(yaml.safeLoad(fs.readFileSync(path.join(process.env.CCR_DIR, id + '.yml'), 'utf-8')));
+            if (Either_1.isRight(c))
+                this.config = c.right;
+            else {
+                console.log(c.left);
+                process.exit(1);
+            }
             this.header = fs.readFileSync(path.join(process.env.CCR_DIR, this.config.header), 'utf-8');
         }
         catch (error) {
@@ -60,7 +68,7 @@ class User {
     }
     generateProxies() {
         this.proxies.forEach(item => {
-            this.doc.proxies.push(item.raw);
+            this.doc.proxies.push(JSON.parse(JSON.stringify(item)));
         });
     }
     generateRules() {
@@ -71,7 +79,7 @@ class User {
     }
     generateGroups() {
         this.groups.forEach(item => {
-            this.doc.proxyGroups.push(item.getRaw());
+            this.doc.proxyGroups.push(JSON.parse(JSON.stringify(item.getRaw())));
         });
     }
 }

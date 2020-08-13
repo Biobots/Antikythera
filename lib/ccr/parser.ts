@@ -4,62 +4,27 @@ import * as Net from './network'
 import { User } from './user'
 import { Rule, RuleGroup } from './rule'
 import { check } from './utils'
+import * as Type from './types'
+import { isRight } from 'fp-ts/lib/Either'
 
-export function parseProxies(proxies:Array<any>): Array<Proxy.BaseProxy> {
+export function parseProxies(proxies:Array<string>): Array<Type.Proxy> {
 	if (!check(proxies)) return []
-	const rst:Array<Proxy.BaseProxy> = proxies
-		.map((item) => {
-			let p:Proxy.BaseProxy
-			switch (item.type) {
-			case 'vmess':
-				p = new Proxy.Vmess(item)
-				break
-			case 'ss':
-				p = new Proxy.Shadowsocks(item)
-				break
-			case 'socks5':
-				p = new Proxy.Socks5(item)
-				break
-			case 'http':
-				p = new Proxy.Http(item)
-				break
-			case 'trojan':
-				p = new Proxy.Trojan(item)
-				break
-			default:
-				p = new Proxy.BaseProxy(item)
-				break
-			}
-			return p
+	const rst:Type.Proxy[] = []
+	proxies
+		.map(raw => Type.tProxy.decode(raw))
+		.forEach(item => {
+			if(isRight(item)) rst.push(item.right)
 		})
 	return rst
 }
 
-export function parseProxyGroups(proxyGroups:Array<any>): Array<Proxy.BaseProxyGroup> {
-	const rst:Array<Proxy.BaseProxyGroup> = proxyGroups
-		.map((item) => {
-			let p:Proxy.BaseProxyGroup
-			switch (item.type) {
-			case 'select':
-				p = new Proxy.SelectProxyGroup(item)
-				break
-			case 'urltest':
-				p = new Proxy.UrlTestProxyGroup(item)
-				break
-			case 'loadbalance':
-				p = new Proxy.LoadBalanceProxyGroup(item)
-				break
-			case 'relay':
-				p = new Proxy.RelayProxyGroup(item)
-				break
-			case 'fallback':
-				p = new Proxy.FallbackProxyGroup(item)
-				break
-			default:
-				p = new Proxy.SelectProxyGroup(item)
-				break
-			}
-			return p
+export function parseProxyGroups(proxyGroups:Array<Type.ProxyGroup>): Array<Proxy.ProxyGroup> {
+	if (!check(proxyGroups)) return []
+	const rst:Array<Proxy.ProxyGroup> = []
+	proxyGroups
+		.map(raw => Type.tProxyGroup.decode(raw))
+		.forEach(item => {
+			if(isRight(item)) rst.push(new Proxy.ProxyGroup(item.right))
 		})
 	return rst
 }
@@ -67,27 +32,31 @@ export function parseProxyGroups(proxyGroups:Array<any>): Array<Proxy.BaseProxyG
 export async function buildProxies(usr:User): Promise<void> {
 	const rst = await Net.getUrls(usr.config.sub)
 	usr.proxies = rst.map(item => item.data)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		.map(doc => <any>yaml.safeLoad(doc))
-		.map(obj => <any[]>obj.proxies)
+		.map(obj => <string[]>obj.proxies)
 		.map(raw => parseProxies(raw))
 		.reduce((all, cur) => all.concat(cur))
-	usr.proxies = usr.proxies.concat(parseProxies(usr.config.proxy))
+	if (typeof(usr.config.proxy)!='undefined') usr.proxies = usr.proxies.concat(parseProxies(usr.config.proxy))
 }
 
 export async function buildRuleGroups(usr:User): Promise<void> {
 	usr.rules = await Promise.all(
 		usr.config.rule.map(
-			async (r: any) => {
+			async (r: Type.RuleConfig) => {
 				let payload:Array<Rule> = []
-				if (check(r.url)) {
+				if (typeof(r.url)!='undefined' && r.url != null) {
 					const rst = await Net.getUrls(r.url)
 					payload = rst.map(item => item.data)
-						.map(doc => <any>yaml.safeLoad(doc))
-						.map(obj => <any[]>obj.payload)
+						.map(doc => {
+							const payload = Type.tRulePayload.decode(yaml.safeLoad(doc))
+							return isRight(payload) ? payload.right : {payload: []}
+						})
+						.map(obj => <string[]>obj.payload)
 						.map(raw => raw.map((s: string) => new Rule(s)))
 						.reduce((all, cur) => all.concat(cur))
 				}
-				if (check(r.extra)) {
+				if (typeof(r.extra)!='undefined' && r.extra != null) {
 					payload = payload.concat(r.extra.map((record: string) => new Rule(record)))
 				}
 				return new RuleGroup(r.name, r.prior, payload)
@@ -96,7 +65,7 @@ export async function buildRuleGroups(usr:User): Promise<void> {
 	)
 }
 
-export function filterProxy(keys:Array<string[]>, proxies:Proxy.BaseProxy[]): Proxy.BaseProxy[] {
+export function filterProxy(keys:Array<string[]>, proxies:Type.Proxy[]): Type.Proxy[] {
 	let output = proxies
 	output = output.filter(proxy => keys.every(k => k.some(kk => proxy.name.includes(kk))))
 	return output
